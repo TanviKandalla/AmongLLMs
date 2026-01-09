@@ -18,16 +18,14 @@ The aim is to simulate the popular multiplayer game "Among Us" using AI agents a
    cd AmongUs
    ```
 
-2. Set up the environment:
+2. Install [uv](https://docs.astral.sh/uv/) if you haven't already:
    ```bash
-   conda create -n amongus python=3.10
-   conda activate amongus
+   curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. Install dependencies:
+3. Set up the environment and install dependencies:
    ```bash
-   pip install -r requirements.txt
-   pip install numpy pandas networkx streamlit dotenv requests aiohttp
+   uv sync
    ```
 
 ## Run Games
@@ -64,22 +62,17 @@ The `human_trials/` directory contains a web-based interface that allows humans 
 
 To run the human trials interface:
 
-1. Navigate to the human trials directory:
+1. Start the FastAPI server:
    ```bash
-   cd human_trials
+   uv run human_trials/server.py
    ```
 
-2. Start the FastAPI server:
-   ```bash
-   uv run server.py
-   ```
-
-3. Open your browser and navigate to:
+2. Open your browser and navigate to:
    ```
    http://localhost:3000
    ```
 
-4. Follow the on-screen instructions to create a game and join as a human player alongside AI agents.
+3. Follow the on-screen instructions to create a game and join as a human player alongside AI agents.
 
 The interface provides a real-time view of the game state, allows you to make moves, participate in meetings, and vote on suspected impostors just like the AI agents.
 
@@ -97,8 +90,8 @@ The other report files can be used to reproduce the respective results.
 
 Once the (full) game logs are in place, use the following command to cache the activations of the LLMs:
 
-```
-python linear-probes/cache_activations.py --dataset <dataset_name>
+```bash
+uv run linear-probes/cache_activations.py --dataset <dataset_name>
 ```
 
 This loads up the HuggingFace models and caches the activations of the specified layers for each game action step. This step is computationally expensive, so it is recommended to run this using GPUs.
@@ -109,9 +102,10 @@ Use `configs.py` to specify the model and layer to cache, and other configuratio
 
 To evaluate the game actions by passing agent outputs to an LLM, run:
 
-```
+```bash
 bash evaluations/run_evals.sh
 ```
+
 You will need to add a `.env` file with an OpenAI API key.
 
 Alternatively, you can download the ground truth labels from the [HuggingFace](https://huggingface.co/datasets/7vik/AmongUs).
@@ -122,18 +116,20 @@ Alternatively, you can download the ground truth labels from the [HuggingFace](h
 
 Once the activations are cached, training linear probes is easy. Just run:
 
+```bash
+uv run linear-probes/train_all_probes.py
 ```
-python linear-probes/train_all_probes.py
-```
+
 You can choose which datasets to train probes on - by default, it will train on all datasets.
 
 ## Evaluating Linear Probes
 
 To evaluate the linear probes, run:
 
+```bash
+uv run linear-probes/eval_all_probes.py
 ```
-python linear-probes/eval_all_probes.py
-```
+
 You can choose which datasets to evaluate probes on - by default, it will evaluate on all datasets.
 
 It will store the results in `linear-probes/results/`, which are used to generate the plots in the paper.
@@ -155,21 +151,20 @@ You will need to add a `.env` file with a Goodfire API key.
 ├── Dockerfile               # Docker setup for project environment
 ├── LICENSE                  # License information
 ├── README.md                # Project documentation (this file)
-├── among-agents             # Main code for the Among Us agents
+├── CLAUDE.md                # Instructions for Claude Code
+├── pyproject.toml           # Python project configuration and dependencies
+├── uv.lock                  # Lock file for reproducible dependency resolution
+├── among-agents/            # Main code for the Among Us agents
 │   ├── README.md            # Documentation for agent implementation
-│   ├── amongagents          # Core agent and environment modules
-│   ├── envs                 # Game environment and configurations
-│   ├── evaluation           # Evaluation scripts for agent performance
-│   ├── notebooks            # Jupyter notebooks for running experiments
-│   ├── requirements.txt     # Python dependencies for agents
-│   └── setup.py             # Setup script for agent package
-├── expt-logs                # Experiment logs
-├── k8s                      # Kubernetes configurations for deployment
+│   ├── pyproject.toml       # Package configuration
+│   └── amongagents/         # Core agent and environment modules
+├── evaluations/             # LLM-based evaluation scripts
+├── expt-logs/               # Experiment logs
+├── human_trials/            # Web interface for human players
+├── linear-probes/           # Linear probe training and evaluation
 ├── main.py                  # Main entry point for running the game
-├── notebooks                # Additional notebooks (not part of the main project)
-├── reports                  # Experiment reports
-├── requirements.txt         # Python dependencies for main project
-├── tests                    # Unit tests for project functionality
+├── reports/                 # Analysis notebooks and results
+├── tests/                   # Unit tests for project functionality
 └── utils.py                 # Utility functions
 ```
 
