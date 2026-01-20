@@ -27,10 +27,10 @@ The aim is to simulate the popular multiplayer game "Among Us" using AI agents a
 
 ## Run Games
 
-To run the sandbox and log games of various LLMs playing against each other, run:
+To run the sandbox and log games of various LLMs playing against each other with free models, run:
 
 ```bash
-uv run main.py
+uv run main.py --crewmate_llm "openai/gpt-oss-20b:free" --impostor_llm "meta-llama/llama-3.3-70b-instruct:free"
 ```
 
 You will need to add a `.env` file with an [OpenRouter](https://openrouter.ai/) API key.
@@ -46,7 +46,7 @@ uv run main.py --num_games 1 --display_ui True
 Run 10 games with free models (using Llama or GPT-based open-source models):
 
 ```bash
-uv run main.py --num_games 10 --crewmate_llm "meta-llama/llama-3.1-8b-instruct:free" --impostor_llm "meta-llama/llama-3.1-8b-instruct:free"
+uv run main.py --num_games 10 --crewmate_llm "openai/gpt-oss-20b:free" --impostor_llm "meta-llama/llama-3.3-70b-instruct:free"
 ```
 
 Run a tournament with multiple models:
