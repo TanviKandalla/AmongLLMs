@@ -12,12 +12,7 @@ The aim is to simulate the popular multiplayer game "Among Us" using AI agents a
 
 ## Setup
 
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/7vik/AmongUs.git
-   cd AmongUs
-   ```
+1. Clone the repository.
 
 2. Install [uv](https://docs.astral.sh/uv/) if you haven't already:
 
