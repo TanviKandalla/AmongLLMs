@@ -304,6 +304,38 @@ class AmongUs:
         }
         
         self.summary_json[game_key]["game_outcome"] = game_outcome
+        
+        # Collect issues from all agents, grouped by model
+        all_issues = []
+        issues_by_model = {}
+        for agent in self.agents:
+            if hasattr(agent, 'issues') and agent.issues:
+                model = getattr(agent, 'model', 'unknown')
+                if model not in issues_by_model:
+                    issues_by_model[model] = {
+                        "api_issues": 0,
+                        "format_issues": 0, 
+                        "resolved": 0,
+                        "unresolved": 0,
+                        "details": []
+                    }
+                for issue in agent.issues:
+                    all_issues.append(issue)
+                    issues_by_model[model]["details"].append(issue)
+                    if issue.get("type") == "api":
+                        issues_by_model[model]["api_issues"] += 1
+                    elif issue.get("type") == "format":
+                        issues_by_model[model]["format_issues"] += 1
+                    if issue.get("resolved"):
+                        issues_by_model[model]["resolved"] += 1
+                    else:
+                        issues_by_model[model]["unresolved"] += 1
+        
+        if all_issues:
+            self.summary_json[game_key]["issues"] = {
+                "total_count": len(all_issues),
+                "by_model": issues_by_model
+            }
 
     def check_game_over(self):
         num_impostors = sum(

@@ -310,6 +310,25 @@ class CompleteFakeTask(CompleteTask):
         return available_tasks
 
 
+class AttemptedAction(Action):
+    def __init__(self, action_text, current_location=None):
+        super().__init__("ATTEMPTED_ACTION", current_location=current_location)
+        self.action_text_content = action_text
+
+    def __repr__(self):
+        return f"ATTEMPTED: {self.action_text_content}"
+    
+    def action_text(self):
+        return f"attempted {self.action_text_content} but failed"
+
+    def execute(self, env, player):
+        # Do nothing, the failure is recorded in the activity log via the action_text
+        pass
+    
+    @staticmethod
+    def can_execute_actions(env, player):
+        return []
+
 COMMON_ACTIONS = [MoveTo, CallMeeting, Vote, Speak, ViewMonitor]
 CREWMATE_ACTIONS = [CompleteTask]
 IMPOSTER_ACTIONS = [Sabotage, Vent, Kill, CompleteFakeTask]

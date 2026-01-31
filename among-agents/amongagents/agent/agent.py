@@ -12,6 +12,7 @@ import aiohttp
 import numpy as np
 import requests
 
+from amongagents.envs.action import AttemptedAction
 from amongagents.agent.neutral_prompts import *
 
 # Set Flask environment variable to True by default
@@ -73,6 +74,7 @@ class LLMAgent(Agent):
             os.getenv("EXPERIMENT_PATH") + "/agent-logs-compact.json"
         )
         self.game_index = game_index
+        self.issues = []  # Track all issues (API errors, format errors) for reporting
 
     def log_interaction(self, sysprompt, prompt, original_response, step):
         """
@@ -179,6 +181,34 @@ class LLMAgent(Agent):
 
         print(".", end="", flush=True)
 
+    def _record_issue(self, issue_type, error_msg, attempt, timestep=None, response_snippet=None, **kwargs):
+        """
+        Record an issue (API error or format error) for later reporting.
+        
+        Args:
+            issue_type: "api" or "format"
+            error_msg: Description of the error
+            attempt: Which retry attempt this occurred on
+            timestep: Game timestep (for format issues)
+            response_snippet: First 200 chars of response (for format issues)
+            **kwargs: Additional metadata (http_status, exception_type, etc.)
+        """
+        issue = {
+            "type": issue_type,
+            "player": self.player.name,
+            "model": self.model,
+            "attempt": attempt,
+            "error": error_msg,
+            "resolved": False,  # Will be updated if retry succeeds
+        }
+        if timestep is not None:
+            issue["timestep"] = timestep
+        if response_snippet is not None:
+            issue["response_snippet"] = response_snippet
+        issue.update(kwargs)
+        self.issues.append(issue)
+        return issue
+
     async def send_request(self, messages):
         """Send a POST request to OpenRouter API with the provided messages."""
         headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -203,6 +233,7 @@ class LLMAgent(Agent):
                         if response is None:
                             last_error = f"Response is None for {self.model}"
                             print(f"[API Error] {last_error}")
+                            self._record_issue("api", last_error, attempt + 1)
                             continue
 
                         # Try to get response body for error messages
@@ -222,6 +253,7 @@ class LLMAgent(Agent):
                                 f"HTTP {response.status} for {self.model}: {error_msg}"
                             )
                             print(f"[API Error] {last_error}")
+                            self._record_issue("api", last_error, attempt + 1, http_status=response.status)
 
                             # Don't retry on auth/permission errors - they won't succeed
                             if response.status in (401, 403, 404):
@@ -231,22 +263,26 @@ class LLMAgent(Agent):
                         data = json.loads(response_text)
                         if "choices" not in data:
                             last_error = f"'choices' key not in response for {self.model}: {response_text[:200]}"
-                            print(f"[API Error] {last_error} (attempt {attempt + 1}/10)")
+                            print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
+                            self._record_issue("api", last_error, attempt + 1)
                             continue
                         if not data["choices"]:
                             last_error = f"'choices' key is empty in response for {self.model}"
-                            print(f"[API Error] {last_error} (attempt {attempt + 1}/10)")
+                            print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
+                            self._record_issue("api", last_error, attempt + 1)
                             continue
                         content = data["choices"][0]["message"]["content"]
                         # Validate that the model returned actual content
                         if not content or not content.strip():
                             last_error = f"Model {self.model} returned empty response"
-                            print(f"[API Error] {last_error} (attempt {attempt + 1}/10)")
+                            print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
+                            self._record_issue("api", last_error, attempt + 1)
                             continue
                         return content
                 except Exception as e:
                     last_error = f"Exception for {self.model}: {str(e)}"
-                    print(f"[API Error] {last_error} (attempt {attempt + 1}/10)")
+                    print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
+                    self._record_issue("api", last_error, attempt + 1, exception_type=type(e).__name__)
                     continue
 
             # All retries exhausted - raise an error instead of silently failing
@@ -335,6 +371,28 @@ class LLMAgent(Agent):
                     if hasattr(action, 'other_player') and action.other_player.name.lower() in vote_target:
                         return action, memory, summarization, None
         
+        # Check for Attempted Illegal Actions (Hallucinations)
+        # Define patterns for known game actions to catch likely hallucinations
+        known_patterns = [
+            (r"MOVE\s+to\s+(.+)", "MOVE"),
+            (r"VENT\s+to\s+(.+)", "VENT"),
+            (r"KILL\s+(.+)", "KILL"),
+            (r"VOTE\s+(.+)", "VOTE"),
+            (r"COMPLETE\s+TASK\s+(.+)", "COMPLETE TASK"),
+            (r"COMPLETE\s+FAKE\s+TASK\s+(.+)", "COMPLETE FAKE TASK"),
+            (r"SABOTAGE\s+(.+)", "SABOTAGE"),
+            (r"VIEW\s+MONITOR", "VIEW MONITOR"),
+            (r"CALL\s+MEETING", "CALL MEETING"),
+            (r"REPORT\s+DEAD\s+BODY", "REPORT DEAD BODY"),
+            (r"SPEAK[:\s]+(.+)", "SPEAK"),
+        ]
+        
+        for pattern, action_name in known_patterns:
+            if re.search(pattern, output_action, re.IGNORECASE):
+                # It looks like a valid action type, but wasn't in available_actions
+                # Return an AttemptedAction so the game records the failure instead of forcing retry
+                return AttemptedAction(output_action, current_location=self.player.location), memory, summarization, None
+
         # No match found - generate helpful error message
         available_action_strs = [repr(a) for a in available_actions]
         error_msg = f"Could not match action. Got: '{output_action[:100]}...'. Available actions: {available_action_strs[:5]}"
@@ -385,16 +443,39 @@ class LLMAgent(Agent):
                 if summarization is not None:
                     self.summarization = summarization
                 
+                # Log success (especially important if retries were needed)
+                if format_attempt > 0:
+                    print(f"[Format Retry SUCCESS on attempt {format_attempt + 1}] {self.player.name}: Selected action {repr(action)}")
+                    # Mark the last issue as resolved
+                    if self.issues:
+                        self.issues[-1]["resolved"] = True
+                        self.issues[-1]["resolved_on_attempt"] = format_attempt + 1
+                
+                # Add metadata about retries and actual action for debugging
+                log_response = response
+                if format_attempt > 0:
+                    log_response = f"[RETRY SUCCEEDED ON ATTEMPT {format_attempt + 1}]\n{response}"
+                
+                # Always append the actual selected action for verification
+                log_response_with_action = f"{log_response}\n\n[EXECUTED ACTION] {repr(action)}"
+                
                 self.log_interaction(
                     sysprompt=self.system_prompt,
                     prompt=full_prompt,
-                    original_response=response,
+                    original_response=log_response_with_action,
                     step=timestep,
                 )
                 return action
             
-            # Validation failed - prepare feedback for retry
+            # Validation failed - record the issue and prepare feedback for retry
             last_error = error_msg
+            self._record_issue(
+                "format", 
+                error_msg, 
+                format_attempt + 1,
+                timestep=timestep,
+                response_snippet=response[:200] if response else "(empty)"
+            )
             available_action_strs = "\n".join([f"  - {repr(a)}" for a in available_actions])
             
             feedback = f"""Your previous response could not be parsed correctly.
@@ -415,6 +496,15 @@ Available actions (choose EXACTLY one, copy it exactly):
 {available_action_strs}
 
 Please reformat your response."""
+            
+            # Log the failed attempt for debugging purposes
+            if format_attempt < max_format_retries - 1:  # Don't log the final failure here (it's logged later)
+                self.log_interaction(
+                    sysprompt=self.system_prompt,
+                    prompt=full_prompt,
+                    original_response=f"[FORMAT RETRY ATTEMPT {format_attempt + 1} FAILED] {response}",
+                    step=timestep,
+                )
             
             print(f"[Format Retry {format_attempt + 1}/{max_format_retries}] {self.player.name}: {error_msg[:80]}")
             
