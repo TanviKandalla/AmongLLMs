@@ -451,18 +451,10 @@ class LLMAgent(Agent):
                         self.issues[-1]["resolved"] = True
                         self.issues[-1]["resolved_on_attempt"] = format_attempt + 1
                 
-                # Add metadata about retries and actual action for debugging
-                log_response = response
-                if format_attempt > 0:
-                    log_response = f"[RETRY SUCCEEDED ON ATTEMPT {format_attempt + 1}]\n{response}"
-                
-                # Always append the actual selected action for verification
-                log_response_with_action = f"{log_response}\n\n[EXECUTED ACTION] {repr(action)}"
-                
                 self.log_interaction(
                     sysprompt=self.system_prompt,
                     prompt=full_prompt,
-                    original_response=log_response_with_action,
+                    original_response=response,
                     step=timestep,
                 )
                 return action
@@ -497,15 +489,6 @@ Available actions (choose EXACTLY one, copy it exactly):
 
 Please reformat your response."""
             
-            # Log the failed attempt for debugging purposes
-            if format_attempt < max_format_retries - 1:  # Don't log the final failure here (it's logged later)
-                self.log_interaction(
-                    sysprompt=self.system_prompt,
-                    prompt=full_prompt,
-                    original_response=f"[FORMAT RETRY ATTEMPT {format_attempt + 1} FAILED] {response}",
-                    step=timestep,
-                )
-            
             print(f"[Format Retry {format_attempt + 1}/{max_format_retries}] {self.player.name}: {error_msg[:80]}")
             
             # Add feedback as a new message for retry
@@ -516,14 +499,7 @@ Please reformat your response."""
                 {"role": "user", "content": feedback},
             ]
         
-        # All format retries exhausted - log and raise error (like API failures)
-        self.log_interaction(
-            sysprompt=self.system_prompt,
-            prompt=full_prompt,
-            original_response=f"[FORMAT RETRY FAILED] {last_response}",
-            step=timestep,
-        )
-        
+        # All format retries exhausted - raise error (issues already tracked in self.issues)
         error_msg = f"Format validation failed after {max_format_retries} retries for {self.player.name} ({self.model}). Last error: {last_error}"
         print(f"\n[FATAL FORMAT ERROR] {error_msg}")
         raise RuntimeError(error_msg)
