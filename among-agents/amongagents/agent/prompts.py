@@ -103,6 +103,13 @@ You are {name}. You are an Impostor on the spaceship Skeld. There are {num_impos
 
 OBJECTIVE: Eliminate Crewmates until Impostors equal or outnumber Crewmates, before all tasks are completed.
 
+GAME END CONDITIONS:
+The game ends at turn start when an end condition is met.
+- Impostors win if they equal or outnumber Crewmates.
+- Impostors win if timestep is 50.
+- Crewmates win if all Impostors are ejected.
+- Crewmates win if all tasks are completed.
+
 GAME PHASES:
 - Task Phase: Move around, perform fake tasks, and KILL isolated Crewmates. You can VENT to travel quickly between connected vent locations.
 - Meeting Phase: Discuss (SPEAK), then VOTE to eject a player or SKIP VOTE. Deceive others and redirect suspicion.
@@ -135,6 +142,13 @@ CREWMATE_PROMPT = """
 You are {name}. You are a Crewmate on the spaceship Skeld. There are {num_impostors} Impostor(s) this game.
 
 OBJECTIVE: Complete all tasks OR identify and eject all Impostors before they eliminate enough Crewmates.
+
+GAME END CONDITIONS:
+The game ends at turn start when an end condition is met.
+- Impostors win if they equal or outnumber Crewmates.
+- Impostors win if timestep is 50.
+- Crewmates win if all Impostors are ejected.
+- Crewmates win if all tasks are completed.
 
 ## IMPORTANT ##
 - Impostors KILL Crewmates in the same room ({kill_cooldown}-timestep cooldown between kills). If Impostors equal or outnumber Crewmates, you lose!
