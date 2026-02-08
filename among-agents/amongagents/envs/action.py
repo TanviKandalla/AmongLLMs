@@ -77,12 +77,14 @@ class CallMeeting(Action):
 
         if not self.is_report:
             env.button_num += 1
+            announcement = f"EMERGENCY MEETING called by {player.name}"
         else:
-            # Broadcast who reported the body to all alive players
             announcement = f"DEAD BODY REPORTED by {player.name}"
-            for p in env.players:
-                if p.is_alive:
-                    p.receive(announcement, info_type="action")
+
+        # Broadcast who called the meeting to all alive players
+        for p in env.players:
+            if p.is_alive:
+                p.receive(announcement, info_type="action")
 
         for p in env.players:
             if not p.is_alive and not p.reported_death:
