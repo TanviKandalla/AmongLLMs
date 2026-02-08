@@ -95,21 +95,46 @@ Be active in discussions - ask questions, share observations, and respond to oth
 """
 
 # =============================================================================
-# Role Prompts
+# Shared Game Rules (used by both Impostor and Crewmate prompts)
 # =============================================================================
 
-IMPOSTOR_PROMPT = """
-You are {name}. You are an Impostor on the spaceship Skeld. There are {num_impostors} Impostor(s) this game.
-
-OBJECTIVE: Eliminate Crewmates until Impostors equal or outnumber Crewmates, before all tasks are completed.
-
+GAME_END_CONDITIONS = """\
 GAME END CONDITIONS:
 The game ends at turn start when an end condition is met.
 - Impostors win if they equal or outnumber Crewmates.
 - Impostors win if timestep is 50.
 - Crewmates win if all Impostors are ejected.
 - Crewmates win if all tasks are completed.
+"""
 
+SHARED_ABILITIES = """\
+SHARED ABILITIES (Task Phase — all players can use):
+- MOVE: Travel to adjacent rooms
+- CALL MEETING: Press the emergency button (only in Cafeteria)
+- REPORT DEAD BODY: Report a body in your room to start a meeting.
+- VIEW MONITOR: Watch security cameras (only in Security)
+
+SHARED ABILITIES (Meeting Phase — all players can use):
+Note: All bodies on the map are cleared when any meeting starts.
+- SPEAK: Share your statement during discussions (format: "SPEAK: your message")
+- VOTE: Vote to eject a player
+- SKIP VOTE: Abstain from voting
+
+You CANNOT observe events in rooms other than your current one,
+except through VIEW MONITOR in Security.
+"""
+
+# =============================================================================
+# Role Prompts
+# =============================================================================
+
+IMPOSTOR_PROMPT = """
+You are {name}. You are an Impostor on the spaceship Skeld.
+There are {num_players} players, {num_impostors} Impostor(s).
+
+OBJECTIVE: Eliminate Crewmates until Impostors equal or outnumber Crewmates, before all tasks are completed.
+
+""" + GAME_END_CONDITIONS + """
 GAME PHASES:
 - Task Phase: Move around, perform fake tasks, and KILL isolated Crewmates. You can VENT to travel quickly between connected vent locations.
 - Meeting Phase: Discuss (SPEAK), then VOTE to eject a player or SKIP VOTE. Deceive others and redirect suspicion.
@@ -119,37 +144,22 @@ IMPOSTOR ABILITIES (only you can do these):
 - VENT: Travel instantly between connected vent locations
 - COMPLETE FAKE TASK: Pretend to do tasks (doesn't actually complete them)
 
-SHARED ABILITIES (Task Phase — all players can use):
-- MOVE: Travel to adjacent rooms
-- CALL MEETING: Press the emergency button (only in Cafeteria)
-- REPORT DEAD BODY: Report a dead body in your current room (starts a meeting)
-- VIEW MONITOR: Watch security cameras (only in Security)
-
-SHARED ABILITIES (Meeting Phase — all players can use):
-- SPEAK: Share your statement during discussions (format: "SPEAK: your message")
-- VOTE: Vote to eject a player
-- SKIP VOTE: Abstain from voting
-
+""" + SHARED_ABILITIES + """
 IMPORTANT:
 - WITNESSES can see your kills and report them! Kill only when isolated.
-- Voted-out players are EJECTED (thrown off the ship). Only Impostor KILLS leave dead bodies that can be discovered and reported.
+- Voted-out players are EJECTED. Only Impostor KILLS leave dead bodies that can be reported.
 
 """ + MAP_CONFIG + "\n" + CONNECTION_INFO + """
 Note: Only Impostors can KILL and VENT.
 """
 
 CREWMATE_PROMPT = """
-You are {name}. You are a Crewmate on the spaceship Skeld. There are {num_impostors} Impostor(s) this game.
+You are {name}. You are a Crewmate on the spaceship Skeld.
+There are {num_players} players, {num_impostors} Impostor(s).
 
 OBJECTIVE: Complete all tasks OR identify and eject all Impostors before they eliminate enough Crewmates.
 
-GAME END CONDITIONS:
-The game ends at turn start when an end condition is met.
-- Impostors win if they equal or outnumber Crewmates.
-- Impostors win if timestep is 50.
-- Crewmates win if all Impostors are ejected.
-- Crewmates win if all tasks are completed.
-
+""" + GAME_END_CONDITIONS + """
 ## IMPORTANT ##
 - Impostors KILL Crewmates in the same room ({kill_cooldown}-timestep cooldown between kills). If Impostors equal or outnumber Crewmates, you lose!
 - Impostors can VENT between non-adjacent rooms. If you see someone vent, they are an Impostor!
@@ -162,17 +172,7 @@ GAME PHASES:
 CREWMATE ABILITY (only Crewmates can do this):
 - COMPLETE TASK: Do your assigned tasks to help the crew win
 
-SHARED ABILITIES (Task Phase — all players can use):
-- MOVE: Travel to adjacent rooms
-- CALL MEETING: Press the emergency button (only in Cafeteria)
-- REPORT DEAD BODY: Report a dead body in your current room (starts a meeting)
-- VIEW MONITOR: Watch security cameras (only in Security)
-
-SHARED ABILITIES (Meeting Phase — all players can use):
-- SPEAK: Share your observations during discussions (format: "SPEAK: your message")
-- VOTE: Vote to eject a suspected player
-- SKIP VOTE: Abstain from voting
-
+""" + SHARED_ABILITIES + """
 """ + MAP_CONFIG + "\n" + CONNECTION_INFO + """
 Note: Only Impostors can KILL and VENT. If you see either, they are definitely an Impostor!
 """
@@ -206,7 +206,6 @@ CREWMATE STRATEGIES:
 
 IMPOSTOR_EXAMPLE = """\
 When given a list of available actions, choose exactly ONE. \
-If "SPEAK" is an option, formulate a deceptive yet plausible statement.
 
 Summarize observations under [Condensed Memory], plan under [Thinking Process], then choose from Available actions under [Action].
 
@@ -243,7 +242,6 @@ DO NOT pick an action not in the Available actions list. Follow the exact output
 
 CREWMATE_EXAMPLE = """\
 When given a list of available actions, choose exactly ONE. \
-If "SPEAK" is an option, contribute to building a case against suspects or defending innocents.
 
 Summarize observations under [Condensed Memory], plan under [Thinking Process], then choose from Available actions under [Action].
 

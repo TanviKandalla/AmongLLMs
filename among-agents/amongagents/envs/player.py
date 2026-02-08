@@ -111,12 +111,13 @@ class Player:
         return text
 
     def action_history_prompt(self):
-        """Return the full action history. No truncation - modern LLMs can handle it."""
+        """Return recent action history. Older actions should be captured in condensed memory."""
         text = "Action history:\n"
         if len(self.action_history) == 0:
             text += "No actions have been taken yet.\n"
         else:
-            for i, record in enumerate(self.action_history):
+            recent_actions = self.action_history[-4:]
+            for i, record in enumerate(recent_actions):
                 timestep = record["timestep"]
                 current_phase = record["phase"]
                 action = record["action"]

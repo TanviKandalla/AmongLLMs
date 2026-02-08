@@ -36,10 +36,10 @@ class Agent:
 
 class LLMAgent(Agent):
     def __init__(
-        self, player, tools, game_index, agent_config, list_of_impostors, model=None, kill_cooldown=0, num_impostors=1
+        self, player, tools, game_index, agent_config, list_of_impostors, model=None, kill_cooldown=0, num_impostors=1, num_players=7
     ):
         super().__init__(player)
-        prompt_vars = dict(name=player.name, kill_cooldown=kill_cooldown, num_impostors=num_impostors)
+        prompt_vars = dict(name=player.name, kill_cooldown=kill_cooldown, num_impostors=num_impostors, num_players=num_players)
         if player.identity == "Crewmate":
             system_prompt = CREWMATE_PROMPT.format(**prompt_vars)
             if player.personality is not None:

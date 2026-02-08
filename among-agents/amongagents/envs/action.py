@@ -59,15 +59,17 @@ class Vent(MoveTo):
 
 
 class CallMeeting(Action):
-    def __init__(self, current_location, is_report=False):
+    def __init__(self, current_location, is_report=False, buttons_remaining=None):
         super().__init__("CALL MEETING", current_location=current_location)
         self.is_report = is_report
+        self.buttons_remaining = buttons_remaining
 
     def __repr__(self):
         if self.is_report:
             return f"REPORT DEAD BODY at {self.current_location}"
         else:
-            return f"{self.name} using the emergency button at {self.current_location}"
+            remaining = f" ({self.buttons_remaining} use(s) left)" if self.buttons_remaining is not None else ""
+            return f"{self.name} using the emergency button at {self.current_location}{remaining}"
 
     def execute(self, env, player):
         super().execute(env, player)
@@ -76,10 +78,11 @@ class CallMeeting(Action):
         if not self.is_report:
             env.button_num += 1
         else:
-            # Broadcast "DEAD BODY REPORTED" to all alive players
+            # Broadcast who reported the body to all alive players
+            announcement = f"DEAD BODY REPORTED by {player.name}"
             for p in env.players:
                 if p.is_alive:
-                    p.receive("DEAD BODY REPORTED", info_type="action")
+                    p.receive(announcement, info_type="action")
 
         for p in env.players:
             if not p.is_alive and not p.reported_death:
@@ -102,7 +105,8 @@ class CallMeeting(Action):
                 and env.button_num < env.game_config["max_num_buttons"]
             ):
                 actions.append(
-                    CallMeeting(current_location=current_location, is_report=False)
+                    CallMeeting(current_location=current_location, is_report=False,
+                                buttons_remaining=env.game_config["max_num_buttons"] - env.button_num)
                 )
 
             # Check if any body is reportable
