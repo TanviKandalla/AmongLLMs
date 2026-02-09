@@ -472,6 +472,7 @@
                  <span>Step: <strong id="stepInfo">0/50</strong></span>
                  <span>Turn: <strong id="currentPlayerInfo">...</strong></span>
                  <span>Your Name: <strong id="humanPlayerName">...</strong></span>
+                <span id="teammateSpan" style="display:none;">Teammate: <strong id="teammateInfo" style="color: #F14D43;"></strong></span>
              </div>
 
             <div class="game-layout">
@@ -1107,8 +1108,19 @@
                     identityText = '✅ ' + playerIdentity;
                 }
 
+                let teammateHtml = '';
+                if (humanPlayerInfo.teammates && humanPlayerInfo.teammates.length > 0) {
+                    // Join teammate names and style them red
+                    const names = humanPlayerInfo.teammates.join(", ");
+                    teammateHtml = ` | <span style="color: red; font-size: 0.9em;">Partner: ${names}</span>`;
+                }
+
                 if (playerNumber && playerColor) {
-                    humanPlayerNameDisplay.innerHTML = `${playerName} (Player ${playerNumber}: ${playerColor}) <span style="color: ${identityColor}; font-weight: bold;">${identityText}</span>`;
+                    humanPlayerNameDisplay.innerHTML = `
+                ${playerName} (Player ${playerNumber}: ${playerColor})
+                <span style="color: ${identityColor}; font-weight: bold;">${identityText}</span>
+                ${teammateHtml}
+            `;
                 } else {
                     humanPlayerNameDisplay.textContent = playerName;
                 }
