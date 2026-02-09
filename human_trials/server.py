@@ -321,12 +321,20 @@ async def get_human_player_info(game_id: int):
 
     human_agent, human_index = human_player_result
 
+    teammates = []
+    # If the human is an Impostor, find the other Impostors
+    if human_agent.player.identity.lower() == "impostor":
+        for p in game.players:
+            if p.identity.lower() == "impostor" and p.name != human_agent.player.name:
+                teammates.append(p.name)
+
     # Get the human player information
     response = {
         "human_index": human_index,
         "player_name": human_agent.player.name,
         "player_color": human_agent.player.color,
         "player_identity": human_agent.player.identity,
+        "teammates": teammates
     }
 
     return response
