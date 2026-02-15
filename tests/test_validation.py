@@ -215,6 +215,29 @@ Must report immediately.
         assert action is not None
         assert action.name == "CALL MEETING"  # Note: space not underscore
 
+    def test_report_dead_body_matches_report_action_not_button(self, mock_agent):
+        """Regression: REPORT DEAD BODY should map to CallMeeting(is_report=True)."""
+        available_actions = [
+            CallMeeting("Cafeteria", is_report=False, buttons_remaining=1),
+            CallMeeting("Cafeteria", is_report=True),
+        ]
+
+        response = """[Condensed Memory]
+I found a body in my room.
+[Thinking Process]
+I should report it immediately.
+[Action] REPORT DEAD BODY at Cafeteria"""
+
+        action, memory, summarization, error = mock_agent._validate_and_parse_action(
+            response, available_actions
+        )
+
+        assert action is not None
+        assert error is None
+        assert action.name == "CALL MEETING"
+        assert hasattr(action, "is_report")
+        assert action.is_report is True
+
 
 # ============================================================================
 # Test: Hallucinated Action Detection

@@ -429,14 +429,20 @@ class LLMAgent(Agent):
                     return action, memory, summarization, None
 
             # Handle CALL MEETING / REPORT DEAD BODY with strict pattern matching
-            # Since CallMeeting.__repr__() changes based on location, agents might use either term
             if action.name == "CALL MEETING":
-                if re.search(
-                    r"CALL\s+MEETING", output_action, re.IGNORECASE
-                ) or re.search(
-                    r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE
-                ):
-                    return action, memory, summarization, None
+                # Only match "REPORT BODY" if this action is a report
+                if hasattr(action, "is_report") and action.is_report:
+                    if re.search(r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
+                # Only match "CALL MEETING" if this action is NOT a report (button press)
+                elif hasattr(action, "is_report") and not action.is_report:
+                    if re.search(r"CALL\s+MEETING", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
+                # Fallback for legacy/unknown cases
+                else:
+                    if re.search(r"CALL\s+MEETING", output_action, re.IGNORECASE) or \
+                       re.search(r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
 
             # Handle VOTE action specially - look for "VOTE Player X"
             if action.name == "VOTE":
