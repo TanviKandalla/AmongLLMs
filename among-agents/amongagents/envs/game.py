@@ -193,6 +193,11 @@ class AmongUs:
                     random.shuffle(impostor_models)
                     random.shuffle(crewmate_models)
 
+            # Build the impostor list
+            self.list_of_impostors = [
+                player.name for player in self.players if player.identity == "Impostor"
+            ]
+
             agent_dict = {
                 "LLM": lambda player, model=None: LLMAgent(
                     player,
@@ -243,8 +248,6 @@ class AmongUs:
                     print(
                         f"{i} Initializing player {player.name} with identity {player.identity} and LLM choice {self.agents[-1].model}"
                     )
-                if player.identity == "Impostor":
-                    self.list_of_impostors.append(player.name)
 
                 # add to summary json
                 self.summary_json[f"Game {self.game_index}"]["Player " + str(i + 1)] = {
@@ -409,9 +412,13 @@ class AmongUs:
         action = await agent.choose_action(self.timestep)
         observation_location = ""
         if action.name == "ViewMonitor":
-            observation_location = agent.choose_observation_location(
+            result = agent.choose_observation_location(
                 self.map.ship_map.nodes
             )
+            if asyncio.iscoroutine(result):
+                observation_location = await result
+            else:
+                observation_location = result
         self.camera_record[agent.player.name] = action
         if str(action).startswith("KILL"):
             location = agent.player.location
@@ -442,7 +449,7 @@ class AmongUs:
                     player.receive(self.pending_system_announcement, info_type="action")
             print(self.pending_system_announcement)
             self.pending_system_announcement = None
-        
+
         for agent in self.agents:
             if "homosapiens" in agent.model:
                 self.is_human_turn = True
@@ -523,7 +530,9 @@ class AmongUs:
             vote_tally[full_name] = vote_count
 
         # Count skip votes
-        skip_votes = sum(1 for target in self.vote_info_one_round.values() if target == "SKIP")
+        skip_votes = sum(
+            1 for target in self.vote_info_one_round.values() if target == "SKIP"
+        )
         if skip_votes > 0:
             vote_tally["SKIP"] = skip_votes
 
@@ -587,7 +596,7 @@ class AmongUs:
             system_announcement += f"{eliminated_player.name} was ejected!\n"
         else:
             system_announcement += "No one was ejected.\n"
-        
+
         # Store the announcement to be shown at start of next task phase
         self.pending_system_announcement = system_announcement
 

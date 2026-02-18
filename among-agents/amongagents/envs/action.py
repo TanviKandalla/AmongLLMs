@@ -68,7 +68,11 @@ class CallMeeting(Action):
         if self.is_report:
             return f"REPORT DEAD BODY at {self.current_location}"
         else:
-            remaining = f" ({self.buttons_remaining} use(s) left)" if self.buttons_remaining is not None else ""
+            remaining = (
+                f" ({self.buttons_remaining} use(s) left)"
+                if self.buttons_remaining is not None
+                else ""
+            )
             return f"{self.name} using the emergency button at {self.current_location}{remaining}"
 
     def execute(self, env, player):
@@ -107,8 +111,12 @@ class CallMeeting(Action):
                 and env.button_num < env.game_config["max_num_buttons"]
             ):
                 actions.append(
-                    CallMeeting(current_location=current_location, is_report=False,
-                                buttons_remaining=env.game_config["max_num_buttons"] - env.button_num)
+                    CallMeeting(
+                        current_location=current_location,
+                        is_report=False,
+                        buttons_remaining=env.game_config["max_num_buttons"]
+                        - env.button_num,
+                    )
                 )
 
             # Check if any body is reportable
@@ -217,7 +225,6 @@ class ViewMonitor(Action):
         else:
             for agent in env.players:
                 if agent in env.check_monitor(choose_location):
-                    message += "(" + agent.name + "): "
 
                     pattern = r"MOVE from ([\w\s]+) to ([\w\s]+)"
                     action = str(env.camera_record[agent.name])
@@ -225,8 +232,10 @@ class ViewMonitor(Action):
                     if match:
                         start_location = match.group(1)
                         end_location = match.group(2)
-                        action = "enter " + end_location
-                    message += action + ", "
+                        message += "(" + agent.name + "): enter " + end_location + ", "
+                    else:
+                        message += "(" + agent.name + ") "
+
 
                 else:
                     pattern = r"MOVE from ([\w\s]+) to ([\w\s]+)"
@@ -240,8 +249,8 @@ class ViewMonitor(Action):
                         print("choose_location", choose_location)
                         if start_location == choose_location:
                             message += "(" + agent.name + "): "
-                            action = "leave " + start_location
-                            message += action + ", "
+                            act = "leave " + start_location
+                            message += act + ", "
 
         message += "}}"
         print(message)

@@ -12,7 +12,7 @@ Tests cover:
 """
 
 import os
-import re
+import sys
 import tempfile
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -22,6 +22,7 @@ import pytest
 os.environ["EXPERIMENT_PATH"] = tempfile.gettempdir()
 
 from amongagents.agent.agent import LLMAgent
+
 from amongagents.envs.action import (
     Action,
     AttemptedAction,
@@ -33,6 +34,7 @@ from amongagents.envs.action import (
     Speak,
     Vent,
     Vote,
+    ViewMonitor,
 )
 from amongagents.envs.player import Crewmate, Impostor
 
@@ -128,6 +130,7 @@ def vote_available_actions_no_skip(mock_target_player):
     ]
 
 
+
 # ============================================================================
 # Test: Valid Action Matching
 # ============================================================================
@@ -214,6 +217,29 @@ Must report immediately.
 
         assert action is not None
         assert action.name == "CALL MEETING"  # Note: space not underscore
+
+    def test_report_dead_body_matches_report_action_not_button(self, mock_agent):
+        """Regression: REPORT DEAD BODY should map to CallMeeting(is_report=True)."""
+        available_actions = [
+            CallMeeting("Cafeteria", is_report=False, buttons_remaining=1),
+            CallMeeting("Cafeteria", is_report=True),
+        ]
+
+        response = """[Condensed Memory]
+I found a body in my room.
+[Thinking Process]
+I should report it immediately.
+[Action] REPORT DEAD BODY at Cafeteria"""
+
+        action, memory, summarization, error = mock_agent._validate_and_parse_action(
+            response, available_actions
+        )
+
+        assert action is not None
+        assert error is None
+        assert action.name == "CALL MEETING"
+        assert hasattr(action, "is_report")
+        assert action.is_report is True
 
 
 # ============================================================================
@@ -387,7 +413,11 @@ I'll move.
         assert action.name == "MOVE"
 
     def test_multiple_action_sections(self, mock_agent, basic_available_actions):
-        """Test response with multiple [Action] sections (should use last one)."""
+        """Test response with multiple [Action] sections (model self-correcting).
+        
+        Should be REJECTED — the model is second-guessing itself, which risks
+        matching on a hallucinated action. Force a clean retry instead.
+        """
         response = """[Condensed Memory]
 Testing.
 [Thinking Process]
@@ -400,9 +430,32 @@ Wait, actually I should go to Admin instead.
             response, basic_available_actions
         )
 
-        # Should match one of the actions
-        assert action is not None
-        assert action.name == "MOVE"
+        assert action is None
+        assert error is not None
+        assert "[Action] tags" in error
+
+    def test_multiple_action_sections_with_hallucinated_first(
+        self, mock_agent, basic_available_actions
+    ):
+        """Model picks a hallucinated action, realizes, then picks a valid one.
+        
+        Must reject the whole response — we can't trust which was intended.
+        """
+        response = """[Condensed Memory]
+I need to eliminate someone.
+[Thinking Process]
+I'll sabotage O2.
+[Action] SABOTAGE O2
+Oh wait, that one isn't available.
+[Action] MOVE from Cafeteria to Admin"""
+
+        action, memory, summarization, error = mock_agent._validate_and_parse_action(
+            response, basic_available_actions
+        )
+
+        assert action is None
+        assert error is not None
+        assert "[Action] tags" in error
 
     def test_only_action_marker_no_content(self, mock_agent, basic_available_actions):
         """Test response with [Action] marker but no action content."""

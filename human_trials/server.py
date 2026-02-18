@@ -24,7 +24,7 @@ from amongagents.envs.configs.game_config import (
     THREE_MEMBER_GAME,
 )
 from amongagents.envs.game import AmongUs
-from amongagents.agent.agent import HumanAgent, human_action_futures
+from amongagents.agent.agent import HumanAgent, human_action_futures,  human_monitor_futures, human_monitor_rooms
 from dotenv import load_dotenv
 
 from utils import setup_experiment
@@ -303,6 +303,11 @@ async def get_game_state(game_id: int):
                 state["player_info"] = human_state.get("player_info", "")
                 state["condensed_memory"] = human_state.get("condensed_memory", "")
 
+    if game_id in human_monitor_futures:
+        state["waiting_for_monitor_room"] = True
+        state["monitor_rooms"] = human_monitor_rooms.get(game_id, [])
+        state["is_human_turn"] = True  # Keep showing it's the human's turn
+
     return state
 
 
@@ -383,6 +388,66 @@ async def submit_human_action(game_id: int, action: HumanActionRequest):
         except Exception as cancel_e:
             print(f"[Server] Error cancelling future for game {game_id}: {cancel_e}")
         raise HTTPException(status_code=500, detail=f"Failed to submit action: {e}")
+
+@app.get("/api/game/{game_id}/monitor_rooms")
+async def get_monitor_rooms(game_id: int):
+    """Return available rooms when the game is waiting for monitor room selection."""
+    if game_id not in active_games:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if game_id not in human_monitor_futures:
+        raise HTTPException(status_code=400, detail="Not waiting for monitor room selection")
+
+    rooms = human_monitor_rooms.get(game_id, [])
+    return {"rooms": rooms, "waiting_for_room": True}
+
+
+class MonitorRoomRequest(BaseModel):
+    room: str
+
+
+@app.post("/api/game/{game_id}/monitor_room")
+async def submit_monitor_room(game_id: int, request: MonitorRoomRequest):
+    """Submit the chosen room for ViewMonitor."""
+    if game_id not in active_games:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if game_id not in human_monitor_futures:
+        raise HTTPException(status_code=400, detail="Not waiting for monitor room selection")
+
+    future = human_monitor_futures[game_id]
+    if future.done():
+        raise HTTPException(status_code=400, detail="Monitor selection already completed")
+
+    rooms = human_monitor_rooms.get(game_id, [])
+    if request.room not in rooms:
+        raise HTTPException(status_code=400, detail=f"Invalid room: {request.room}")
+
+    game = active_games[game_id]["game"]
+    human_player_result = get_human_player(game)
+    obs_count_before = 0
+    if human_player_result:
+        obs_count_before = len(human_player_result[0].player.observation_history)
+
+    try:
+        future.set_result(request.room)
+
+        # Wait briefly for the game loop to execute ViewMonitor and append the observation
+        for _ in range(20):  # Try for up to 2 seconds
+            await asyncio.sleep(0.1)
+            if human_player_result:
+                current_count = len(human_player_result[0].player.observation_history)
+                if current_count > obs_count_before:
+                    # New observation was added — return it
+                    monitor_result = human_player_result[0].player.observation_history[-1]
+                    return {"status": "success", "room": request.room, "monitor_result": monitor_result}
+
+        # Fallback if we couldn't get the result in time
+        return {"status": "success", "room": request.room, "monitor_result": None}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit room: {e}")
+
 
 
 if __name__ == "__main__":

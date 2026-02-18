@@ -25,7 +25,8 @@ BIG_LIST_OF_MODELS = [
     "meta-llama/llama-3.3-70b-instruct",
     "google/gemini-2.0-flash-001",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-oss-20b:free",
+    "openai/gpt-5-mini",
+    "qwen/qwen3-next-80b-a3b-thinking",
 ]
 
 # Actual default game configuration for Human Trials
@@ -38,18 +39,20 @@ DEFAULT_GAME_ARGS = {
         "Impostor": "LLM",
         "Crewmate": "LLM",
         "IMPOSTOR_LLM_CHOICES": [
-            "openai/gpt-oss-120b",
+            "openai/gpt-5-mini",
             "moonshotai/kimi-k2.5",
             "mistralai/mistral-large-2512",
             "meta-llama/llama-3.3-70b-instruct",
             "anthropic/claude-sonnet-4.5",
+            "qwen/qwen3-next-80b-a3b-thinking",
         ],
         "CREWMATE_LLM_CHOICES": [
-            "openai/gpt-oss-120b",
+            "openai/gpt-5-mini",
             "moonshotai/kimi-k2.5",
             "mistralai/mistral-large-2512",
             "meta-llama/llama-3.3-70b-instruct",
             "anthropic/claude-sonnet-4.5",
+            "qwen/qwen3-next-80b-a3b-thinking",
         ],
         "assignment_mode": "unique",  # 'random' picks with replacement, 'unique' picks without replacement
     },

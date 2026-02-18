@@ -3,12 +3,11 @@
 #   uv run main.py --num_games 1 --models "model1,model2,model3,model4,model5" --unique --game_size 5
 #   uv run main.py --num_games 10 --crewmate_llm "openai/gpt-4o" --impostor_llm "anthropic/claude-3.5-sonnet"
 
-import os
-import sys
 import asyncio
+import os
 import random
-
-from typing import Optional, List
+import sys
+from typing import List, Optional
 
 sys.path.append(os.path.join(os.path.abspath("."), "among-agents"))
 
@@ -20,7 +19,6 @@ from amongagents.envs.configs.agent_config import ALL_LLM
 from amongagents.envs.configs.game_config import (
     FIVE_MEMBER_GAME,
     SEVEN_MEMBER_GAME,
-    FIVE_MEMBER_GAME,
 )
 from amongagents.envs.configs.map_config import map_coords
 from amongagents.envs.game import AmongUs
@@ -96,28 +94,34 @@ async def multiple_games(experiment_name=None, num_games=1, rate_limit=50):
 
     async def run_limited_game(game_index):
         async with semaphore:
-            if ARGS.get("tournament_style") == "1on1":
-                # Randomly select one model for each role for this specific game
-                game_config = ARGS["agent_config"].copy()
-                game_config["CREWMATE_LLM_CHOICES"] = [
-                    random.choice(BIG_LIST_OF_MODELS)
-                ]
-                game_config["IMPOSTOR_LLM_CHOICES"] = [
-                    random.choice(BIG_LIST_OF_MODELS)
-                ]
-            else:
-                game_config = ARGS["agent_config"]
+            try:
+                if ARGS.get("tournament_style") == "1on1":
+                    # Randomly select one model for each role for this specific game
+                    game_config = ARGS["agent_config"].copy()
+                    game_config["CREWMATE_LLM_CHOICES"] = [
+                        random.choice(BIG_LIST_OF_MODELS)
+                    ]
+                    game_config["IMPOSTOR_LLM_CHOICES"] = [
+                        random.choice(BIG_LIST_OF_MODELS)
+                    ]
+                else:
+                    game_config = ARGS["agent_config"]
 
-            game = AmongUs(
-                game_config=ARGS["game_config"],
-                include_human=ARGS["include_human"],
-                test=ARGS["test"],
-                personality=ARGS["personality"],
-                agent_config=game_config,
-                UI=ui,
-                game_index=game_index,
-            )
-            await game.run_game()
+                game = AmongUs(
+                    game_config=ARGS["game_config"],
+                    include_human=ARGS["include_human"],
+                    test=ARGS["test"],
+                    personality=ARGS["personality"],
+                    agent_config=game_config,
+                    UI=ui,
+                    game_index=game_index,
+                )
+                await game.run_game()
+            except Exception as e:
+                print(f"Game {game_index} failed with error: {e}")
+                import traceback
+
+                traceback.print_exc()
 
     tasks = [run_limited_game(i) for i in range(1, num_games + 1)]
     await asyncio.gather(*tasks)

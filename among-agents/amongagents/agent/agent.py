@@ -21,7 +21,8 @@ if "FLASK" not in os.environ:
 
 # Global dictionary to store futures for human actions, keyed by game_id
 human_action_futures: Dict[int, asyncio.Future] = {}
-
+human_monitor_futures = {}
+human_monitor_rooms = {}
 
 class Agent:
     def __init__(self, player):
@@ -36,10 +37,24 @@ class Agent:
 
 class LLMAgent(Agent):
     def __init__(
-        self, player, tools, game_index, agent_config, list_of_impostors, model=None, kill_cooldown=0, num_impostors=1, num_players=7
+        self,
+        player,
+        tools,
+        game_index,
+        agent_config,
+        list_of_impostors,
+        model=None,
+        kill_cooldown=0,
+        num_impostors=1,
+        num_players=7,
     ):
         super().__init__(player)
-        prompt_vars = dict(name=player.name, kill_cooldown=kill_cooldown, num_impostors=num_impostors, num_players=num_players)
+        prompt_vars = dict(
+            name=player.name,
+            kill_cooldown=kill_cooldown,
+            num_impostors=num_impostors,
+            num_players=num_players,
+        )
         if player.identity == "Crewmate":
             system_prompt = CREWMATE_PROMPT.format(**prompt_vars)
             if player.personality is not None:
@@ -50,13 +65,23 @@ class LLMAgent(Agent):
             if model is None:
                 model = random.choice(agent_config["CREWMATE_LLM_CHOICES"])
         elif player.identity == "Impostor":
+            # Format teammate information naturally
+            teammates = [imp for imp in list_of_impostors if imp != player.name]
+            if teammates:
+                prompt_vars["impostor_teammates_text"] = (
+                    f"YOUR FELLOW IMPOSTOR(S): {', '.join(teammates)}"
+                )
+            else:
+                prompt_vars["impostor_teammates_text"] = (
+                    "You are the ONLY Impostor in this game."
+                )
+
             system_prompt = IMPOSTOR_PROMPT.format(**prompt_vars)
             if player.personality is not None:
                 system_prompt += PERSONALITY_PROMPT.format(
                     personality=ImpostorPersonalities[player.personality]
                 )
             system_prompt += IMPOSTOR_EXAMPLE
-            system_prompt += f"List of impostors: {list_of_impostors}"
             if model is None:
                 model = random.choice(agent_config["IMPOSTOR_LLM_CHOICES"])
 
@@ -182,10 +207,18 @@ class LLMAgent(Agent):
 
         print(".", end="", flush=True)
 
-    def _record_issue(self, issue_type, error_msg, attempt, timestep=None, response_snippet=None, **kwargs):
+    def _record_issue(
+        self,
+        issue_type,
+        error_msg,
+        attempt,
+        timestep=None,
+        response_snippet=None,
+        **kwargs,
+    ):
         """
         Record an issue (API error or format error) for later reporting.
-        
+
         Args:
             issue_type: "api" or "format"
             error_msg: Description of the error
@@ -226,7 +259,9 @@ class LLMAgent(Agent):
 
         last_error = None
         async with aiohttp.ClientSession() as session:
-            for attempt in range(5):  # 5 API retries (format retries handled separately)
+            for attempt in range(
+                5
+            ):  # 5 API retries (format retries handled separately)
                 try:
                     async with session.post(
                         self.api_url, headers=headers, data=json.dumps(payload)
@@ -254,7 +289,12 @@ class LLMAgent(Agent):
                                 f"HTTP {response.status} for {self.model}: {error_msg}"
                             )
                             print(f"[API Error] {last_error}")
-                            self._record_issue("api", last_error, attempt + 1, http_status=response.status)
+                            self._record_issue(
+                                "api",
+                                last_error,
+                                attempt + 1,
+                                http_status=response.status,
+                            )
 
                             # Don't retry on auth/permission errors - they won't succeed
                             if response.status in (401, 403, 404):
@@ -268,7 +308,9 @@ class LLMAgent(Agent):
                             self._record_issue("api", last_error, attempt + 1)
                             continue
                         if not data["choices"]:
-                            last_error = f"'choices' key is empty in response for {self.model}"
+                            last_error = (
+                                f"'choices' key is empty in response for {self.model}"
+                            )
                             print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
                             self._record_issue("api", last_error, attempt + 1)
                             continue
@@ -283,7 +325,9 @@ class LLMAgent(Agent):
                 except Exception as e:
                     last_error = f"Exception for {self.model}: {str(e)}"
                     print(f"[API Error] {last_error} (attempt {attempt + 1}/5)")
-                    self._record_issue("api", last_error, attempt + 1, exception_type=type(e).__name__)
+                    self._record_issue(
+                        "api", last_error, attempt + 1, exception_type=type(e).__name__
+                    )
                     continue
 
             # All retries exhausted - raise an error instead of silently failing
@@ -303,7 +347,7 @@ class LLMAgent(Agent):
     def _validate_and_parse_action(self, response, available_actions):
         """
         Validate and parse an LLM response to extract an action.
-        
+
         Returns:
             tuple: (action, memory, summarization, error_message)
             - action: The matched action if valid, None otherwise
@@ -313,77 +357,110 @@ class LLMAgent(Agent):
         """
         if not response or not response.strip():
             return None, None, None, "Response is empty"
-        
+
+        # Reject responses with multiple [Action] tags — the model is
+        # second-guessing itself, so force a clean retry instead of
+        # risking a match on the wrong (possibly hallucinated) action.
+        action_tag_count = len(re.findall(r"\[Action\]", response, re.IGNORECASE))
+        if action_tag_count > 1:
+            return (
+                None,
+                None,
+                None,
+                (
+                    f"Response contains {action_tag_count} [Action] tags — "
+                    "model appears to be self-correcting. Pick exactly ONE action."
+                ),
+            )
+
         # Try to parse the structured format
         pattern = r"\[Condensed Memory\]((.|\n)*?)\[Thinking Process\]((.|\n)*?)\[Action\]((.|\n)*)$"
         match = re.search(pattern, response, re.IGNORECASE)
-        
+
         memory = None
         summarization = None
-        
+
         if match:
             memory = match.group(1).strip()
             summarization = match.group(3).strip()
             output_action = match.group(5).strip()
         else:
             # Try to find just [Action] section
-            action_match = re.search(r"\[Action\]\s*(.+)", response, re.IGNORECASE | re.DOTALL)
+            action_match = re.search(
+                r"\[Action\]\s*(.+)", response, re.IGNORECASE | re.DOTALL
+            )
             if action_match:
                 output_action = action_match.group(1).strip()
             else:
                 # Last resort: use the whole response
                 output_action = response.strip()
-        
+
         # Normalize the output action for matching
         output_action_lower = output_action.lower()
-        output_action_normalized = ' '.join(output_action.split())  # Collapse whitespace
-        
+        output_action_normalized = " ".join(
+            output_action.split()
+        )  # Collapse whitespace
+
         # Try to match against available actions
         for action in available_actions:
             action_repr = repr(action)
             action_repr_lower = action_repr.lower()
-            action_repr_normalized = ' '.join(action_repr.split())
-            
+            action_repr_normalized = " ".join(action_repr.split())
+
             # Exact match
             if action_repr in output_action:
                 return action, memory, summarization, None
-            
+
             # Case-insensitive match
             if action_repr_lower in output_action_lower:
                 return action, memory, summarization, None
-            
+
             # Normalized whitespace match
             if action_repr_normalized.lower() in output_action_normalized.lower():
                 return action, memory, summarization, None
-            
+
             # Handle SPEAK action specially
             if action.name == "SPEAK" and "speak" in output_action_lower:
                 # Extract message after SPEAK: (with or without colon)
-                speak_match = re.search(r"speak[:\s]+(.+)", output_action, re.IGNORECASE | re.DOTALL)
+                speak_match = re.search(
+                    r"speak[:\s]+(.+)", output_action, re.IGNORECASE | re.DOTALL
+                )
                 if speak_match:
                     action.message = speak_match.group(1).strip()
                     return action, memory, summarization, None
-            
+
             # Handle CALL MEETING / REPORT DEAD BODY with strict pattern matching
-            # Since CallMeeting.__repr__() changes based on location, agents might use either term
             if action.name == "CALL MEETING":
-                if re.search(r"CALL\s+MEETING", output_action, re.IGNORECASE) or \
-                   re.search(r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE):
-                    return action, memory, summarization, None
-            
+                # Only match "REPORT BODY" if this action is a report
+                if hasattr(action, "is_report") and action.is_report:
+                    if re.search(r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
+                # Only match "CALL MEETING" if this action is NOT a report (button press)
+                elif hasattr(action, "is_report") and not action.is_report:
+                    if re.search(r"CALL\s+MEETING", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
+                # Fallback for legacy/unknown cases
+                else:
+                    if re.search(r"CALL\s+MEETING", output_action, re.IGNORECASE) or \
+                       re.search(r"REPORT\s+(?:DEAD\s+)?BODY", output_action, re.IGNORECASE):
+                        return action, memory, summarization, None
+
             # Handle VOTE action specially - look for "VOTE Player X"
             if action.name == "VOTE":
                 vote_match = re.search(r"vote\s+(.+)", output_action, re.IGNORECASE)
                 if vote_match:
                     vote_target = vote_match.group(1).strip().lower()
-                    if hasattr(action, 'other_player') and action.other_player.name.lower() in vote_target:
+                    if (
+                        hasattr(action, "other_player")
+                        and action.other_player.name.lower() in vote_target
+                    ):
                         return action, memory, summarization, None
-            
+
             # Handle SKIP VOTE action specially
             if action.name == "SKIP VOTE":
                 if "skip" in output_action_lower and "vote" in output_action_lower:
                     return action, memory, summarization, None
-        
+
         # No match found - generate helpful error message (triggers retry loop)
         available_action_strs = [repr(a) for a in available_actions]
         error_msg = f"Could not match action. Got: '{output_action[:100]}...'. Available actions: {available_action_strs[:5]}"
@@ -400,7 +477,7 @@ class LLMAgent(Agent):
         )
 
         base_content = f"Summarization: {self.summarization}\n\n{all_info}\n\nMemory: {self.processed_memory}\n\nPhase: {phase}. Return your output."
-        
+
         messages = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": base_content},
@@ -417,29 +494,31 @@ class LLMAgent(Agent):
         # Format retry loop (up to 3 attempts)
         max_format_retries = 3
         last_error = None
-        
+
         for format_attempt in range(max_format_retries):
             response = await self.send_request(messages)
-            
+
             action, memory, summarization, error_msg = self._validate_and_parse_action(
                 response, available_actions
             )
-            
+
             if action is not None:
                 # Success! Update state and return
                 if memory is not None:
                     self.processed_memory = memory
                 if summarization is not None:
                     self.summarization = summarization
-                
+
                 # Log success (especially important if retries were needed)
                 if format_attempt > 0:
-                    print(f"[Format Retry SUCCESS on attempt {format_attempt + 1}] {self.player.name}: Selected action {repr(action)}")
+                    print(
+                        f"[Format Retry SUCCESS on attempt {format_attempt + 1}] {self.player.name}: Selected action {repr(action)}"
+                    )
                     # Mark the last issue as resolved
                     if self.issues:
                         self.issues[-1]["resolved"] = True
                         self.issues[-1]["resolved_on_attempt"] = format_attempt + 1
-                
+
                 self.log_interaction(
                     sysprompt=self.system_prompt,
                     prompt=full_prompt,
@@ -447,18 +526,20 @@ class LLMAgent(Agent):
                     step=timestep,
                 )
                 return action
-            
+
             # Validation failed - record the issue and prepare feedback for retry
             last_error = error_msg
             self._record_issue(
-                "format", 
-                error_msg, 
+                "format",
+                error_msg,
                 format_attempt + 1,
                 timestep=timestep,
-                response_snippet=response[:200] if response else "(empty)"
+                response_snippet=response[:200] if response else "(empty)",
             )
-            available_action_strs = "\n".join([f"  - {repr(a)}" for a in available_actions])
-            
+            available_action_strs = "\n".join(
+                [f"  - {repr(a)}" for a in available_actions]
+            )
+
             feedback = f"""Your previous response could not be parsed correctly.
 
 Your response was:
@@ -477,9 +558,11 @@ Available actions (choose EXACTLY one, copy it exactly):
 {available_action_strs}
 
 Please reformat your response."""
-            
-            print(f"[Format Retry {format_attempt + 1}/{max_format_retries}] {self.player.name}: {error_msg[:80]}")
-            
+
+            print(
+                f"[Format Retry {format_attempt + 1}/{max_format_retries}] {self.player.name}: {error_msg[:80]}"
+            )
+
             # Add feedback as a new message for retry
             messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -487,13 +570,17 @@ Please reformat your response."""
                 {"role": "assistant", "content": response},
                 {"role": "user", "content": feedback},
             ]
-        
+
         # All format retries exhausted
         # During voting phase, gracefully fall back to SKIP VOTE instead of crashing
-        is_voting_phase = all(a.name in ["VOTE", "SKIP VOTE"] for a in available_actions)
+        is_voting_phase = all(
+            a.name in ["VOTE", "SKIP VOTE"] for a in available_actions
+        )
         if is_voting_phase:
             skip_action = SkipVote(current_location=self.player.location)
-            print(f"\n[FORMAT FALLBACK] {self.player.name} ({self.model}) failed to vote after {max_format_retries} retries — defaulting to SKIP VOTE")
+            print(
+                f"\n[FORMAT FALLBACK] {self.player.name} ({self.model}) failed to vote after {max_format_retries} retries — defaulting to SKIP VOTE"
+            )
             self.log_interaction(
                 sysprompt=self.system_prompt,
                 prompt=full_prompt,
@@ -810,22 +897,47 @@ class HumanAgent(Agent):
         response = input()
         return response
 
-    def choose_observation_location(self, map):
+    async def choose_observation_location(self, map):
+        """Choose a room to monitor — via web or CLI depending on FLASK_ENABLED."""
+        use_flask = os.getenv("FLASK_ENABLED", "True") == "True"
         map_list = list(map)
-        print("Please select the room you wish to observe:")
-        for i, room in enumerate(map_list):
-            print(f"{i}: {room}")
-        while True:
+
+        if use_flask:
+            loop = asyncio.get_event_loop()
+            self.monitor_future = loop.create_future()
+
+            game_id = getattr(self, "game_id", self.game_index)
+            human_monitor_futures[game_id] = self.monitor_future
+            human_monitor_rooms[game_id] = map_list
+
+            print(f"[Agent] Waiting for monitor room selection for game {game_id}")
+            print(f"[Agent] Available rooms: {map_list}")
+
             try:
-                index = int(input())
-                if index < 0 or index >= len(map_list):
-                    print(
-                        f"Invalid input. Please enter a number between 0 and {len(map_list) - 1}."
-                    )
-                else:
-                    return map_list[index]
-            except:
-                print("Invalid input. Please enter a number.")
+                chosen_room = await self.monitor_future
+                print(f"[Agent] Room selected: {chosen_room}")
+                return chosen_room
+            except asyncio.CancelledError:
+                print(f"[Agent] Monitor room selection cancelled for game {game_id}")
+                raise
+            finally:
+                human_monitor_futures.pop(game_id, None)
+                human_monitor_rooms.pop(game_id, None)
+                self.monitor_future = None
+        else:
+            # CLI fallback
+            print("Please select the room you wish to observe:")
+            for i, room in enumerate(map_list):
+                print(f"{i}: {room}")
+            while True:
+                try:
+                    index = int(input())
+                    if index < 0 or index >= len(map_list):
+                        print(f"Invalid input. Please enter a number between 0 and {len(map_list) - 1}.")
+                    else:
+                        return map_list[index]
+                except:
+                    print("Invalid input. Please enter a number.")
 
     def log_interaction(self, sysprompt, prompt, original_response, step):
         """

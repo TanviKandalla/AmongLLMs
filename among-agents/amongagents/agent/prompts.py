@@ -140,6 +140,8 @@ IMPOSTOR_PROMPT = """
 You are {name}. You are an Impostor on the spaceship Skeld.
 There are {num_players} players, {num_impostors} Impostor(s).
 
+{impostor_teammates_text}
+
 OBJECTIVE: Eliminate Crewmates until Impostors equal or outnumber Crewmates, before all tasks are completed.
 
 """ + GAME_END_CONDITIONS + """
@@ -155,7 +157,7 @@ IMPOSTOR ABILITIES (only you can do these):
 """ + SHARED_ABILITIES + """
 IMPORTANT:
 - WITNESSES can see your kills and report them! Kill only when isolated.
-- Voted-out players are EJECTED. Only Impostor KILLS leave dead bodies that can be reported.
+- Voted-out players are EJECTED and do not leave behind a body. Only Impostor KILLS leave dead bodies that can be discovered and reported.
 
 """ + MAP_CONFIG + "\n" + CONNECTION_INFO + """
 Note: Only Impostors can KILL and VENT.
@@ -171,7 +173,7 @@ OBJECTIVE: Complete all tasks OR identify and eject all Impostors before they el
 ## IMPORTANT ##
 - Impostors KILL Crewmates in the same room ({kill_cooldown}-timestep cooldown between kills). If Impostors equal or outnumber Crewmates, you lose!
 - Impostors can VENT between non-adjacent rooms. If you see someone vent, they are an Impostor!
-- Voted-out players are EJECTED (thrown off the ship). Only Impostor KILLS leave dead bodies that can be discovered and reported.
+- Voted-out players are EJECTED and do not leave behind a body. Only Impostor KILLS leave dead bodies that can be discovered and reported.
 
 GAME PHASES:
 - Task Phase: COMPLETE TASK at task locations, MOVE to gather evidence, REPORT DEAD BODY if you find one, or CALL MEETING in Cafeteria.
