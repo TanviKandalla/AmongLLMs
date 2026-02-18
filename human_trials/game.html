@@ -492,7 +492,7 @@
                  <div id="humanPlayerInfo" class="human-player-info"></div>
                  <div class="action-options" id="actionOptions"></div>
                  <textarea id="speakMessage" placeholder="Enter your message here..."></textarea>
-                 
+
                  <div class="memory-thinking-section">
                      <h3>Optional: Add Your Thoughts</h3>
                      <div class="memory-field">
@@ -504,7 +504,7 @@
                          <textarea id="thinkingProcess" placeholder="Describe your reasoning and strategy..."></textarea>
                      </div>
                  </div>
-                 
+
                  <button id="submitActionBtn" onclick="submitAction()">Submit Action</button>
              </div>
 
@@ -541,7 +541,7 @@
         const mapToggleText = document.getElementById('mapToggleText');
         const mapToggleIcon = document.getElementById('mapToggleIcon');
         const mapContainer = document.getElementById('mapContainer');
-        
+
         // Flag to track if we're waiting for human input
         let waitingForHumanInput = false;
         // Flag to track map visibility
@@ -595,7 +595,7 @@
             startGameBtn.textContent = 'Starting...';
             showLoading('Creating game instance...');
             hideError();
-            
+
             try {
                 // 1. Create the game instance
                 const startResponse = await fetch(`${API_BASE_URL}/start_game`, {
@@ -603,7 +603,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         game_config: "SEVEN_MEMBER_GAME", // 7 players with 2 impostors
-                        include_human: true,
+                        include_human: false,
                         // Add other config options if needed
                     })
                 });
@@ -634,16 +634,16 @@
                 // 3. Switch UI and start polling for state
                 homeScreen.style.display = 'none';
                 gameScreen.style.display = 'block';
-                
+
                 // Set the game started flag to true
                 gameStarted = true;
-                
+
                 // Get the human player information right after starting the game
                 await getHumanPlayerInfo();
-                
+
                 // Set the player name in the status bar
                 updateHumanPlayerDisplay();
-                
+
                 startGameStatePolling();
                 hideLoading();
 
@@ -659,10 +659,10 @@
         function startGameStatePolling() {
             if (gameStateInterval) clearInterval(gameStateInterval);
             // Poll more frequently to ensure updates are seen
-            gameStateInterval = setInterval(updateGameState, 1000); 
+            gameStateInterval = setInterval(updateGameState, 1000);
             updateGameState(); // Initial immediate update
         }
-        
+
         function stopGameStatePolling() {
             if (gameStateInterval) {
                 clearInterval(gameStateInterval);
@@ -670,7 +670,7 @@
                 console.log("Polling stopped while waiting for human input");
             }
         }
-        
+
         function resumeGameStatePolling() {
             if (!gameStateInterval && gameStarted) {
                 console.log("Resuming polling after human action");
@@ -681,7 +681,7 @@
         async function updateGameState() {
             // Skip polling if game hasn't started yet
             if (!gameStarted || !currentGameId) return;
-            
+
             // Skip polling if we're waiting for human input
             if (waitingForHumanInput) {
                 console.log("Skipping poll while waiting for human input");
@@ -708,25 +708,27 @@
 
                 const gameState = await response.json();
                 console.log("Received game state:", gameState);
-                
+
                 // Save the last game state
                 lastGameState = gameState;
-                
+
                 // Debug information for human turn
                 if (gameState.is_human_turn) {
                     console.log("Human turn detected in updateGameState");
                     console.log("Human player name:", gameState.player_name);
                     console.log("Available actions:", gameState.available_actions);
-                    
+
                     // Stop polling when it's the human's turn (as requested)
                     waitingForHumanInput = true;
                     stopGameStatePolling();
                 }
-                
+
                 renderGameState(gameState);
                 hideLoading();
 
                  // Stop polling if game is completed or errored
+                // if (gameState.status) {
+
                 if (['completed', 'error', 'cancelled'].includes(gameState.status)) {
                     if (gameStateInterval) clearInterval(gameStateInterval);
                     gameStateInterval = null;
@@ -763,7 +765,7 @@
 
           gameStatusDisplay.textContent = state.status;
             phaseInfoDisplay.textContent = state.current_phase || 'N/A';
-            
+
             // Display current step and player
             const stepInfo = document.getElementById('stepInfo');
             if (stepInfo) {
@@ -771,7 +773,7 @@
                 const maxSteps = state.max_timesteps || 50;
                 stepInfo.textContent = `${currentStep}/${maxSteps}`;
             }
-            
+
             const currentPlayerInfo = document.getElementById('currentPlayerInfo');
             if (currentPlayerInfo) {
                 currentPlayerInfo.textContent = `${state.current_player || 'Unknown'}`;
@@ -803,16 +805,16 @@
                     speakMessageInput.style.display = 'none';
                     speakMessageInput.value = '';
                 }
-                
+
                 // Reset the memory and thinking process fields
                 const condensedMemoryField = document.getElementById('condensedMemory');
                 const thinkingProcessField = document.getElementById('thinkingProcess');
-                
+
                 // Update the scratchpad with the value from the state if available
                 if (condensedMemoryField && state.condensed_memory !== undefined) {
                     condensedMemoryField.value = state.condensed_memory;
                 }
-                
+
                 // Only reset the thinking process field, not the scratchpad
                 if (thinkingProcessField) {
                     thinkingProcessField.value = '';
@@ -856,13 +858,13 @@
                         submitActionBtn.disabled = true;
                     }
                 }
-                
+
                 // Force display the human action area
                 if (humanActionArea) {
                     humanActionArea.style.display = 'block';
                     // Add a class to make it more visible
                     humanActionArea.classList.add('active');
-                    
+
                     // Scroll to the human action area
                     setTimeout(() => {
                         humanActionArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -888,7 +890,7 @@
                  submitActionBtn.disabled = false; // Enable immediately for non-speak actions
             }
         }
-        
+
         // Add listener for speak message input to enable/disable button
         speakMessageInput.addEventListener('input', () => {
              const selectedRadio = document.querySelector('input[name="humanAction"]:checked');
@@ -947,7 +949,7 @@
 
                 console.log("Action submitted successfully");
                 humanActionArea.style.display = 'none'; // Hide action area after submission
-                
+
                 // Reset the waiting flag and resume polling
                 waitingForHumanInput = false;
                 resumeGameStatePolling();
@@ -970,8 +972,9 @@
                 </div>`;
             } else if (state.results) {
                 // Format the results nicely
-                const winner = state.results.winner || 'Unknown';
-                const reason = state.results.reason || 'N/A';
+                const key = `Game ${currentGameId}`;
+                const winner = state.results?.[key]?.game_outcome?.winner ?? "Unknown";
+                const reason = state.results?.[key]?.game_outcome?.reason ?? "N/A";
 
                 // Determine if human won
                 let winnerColor = winner.toLowerCase().includes('impostor') ? 'var(--error-color)' : 'var(--success-color)';
@@ -1049,14 +1052,14 @@
         document.addEventListener('DOMContentLoaded', () => {
              // Any setup needed when the page loads
              console.log("Among Us Web UI Initialized");
-             
+
              // Set up map toggle functionality
              mapToggle.addEventListener('click', () => {
                  mapVisible = !mapVisible;
                  updateMapVisibility();
              });
         });
-        
+
         // Function to update map visibility
         function updateMapVisibility() {
             if (mapVisible) {
@@ -1073,7 +1076,7 @@
         // Function to get human player information
         async function getHumanPlayerInfo() {
             if (!currentGameId) return;
-            
+
             try {
                 const response = await fetch(`${API_BASE_URL}/game/${currentGameId}/human_info`);
                 if (response.ok) {
@@ -1087,7 +1090,7 @@
                 // Don't show error to user - just log it
             }
         }
-        
+
         // Function to update the human player display
         function updateHumanPlayerDisplay() {
             if (!humanPlayerNameDisplay) return;
