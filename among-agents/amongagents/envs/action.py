@@ -225,7 +225,6 @@ class ViewMonitor(Action):
         else:
             for agent in env.players:
                 if agent in env.check_monitor(choose_location):
-                    message += "(" + agent.name + "): "
 
                     pattern = r"MOVE from ([\w\s]+) to ([\w\s]+)"
                     action = str(env.camera_record[agent.name])
@@ -233,8 +232,10 @@ class ViewMonitor(Action):
                     if match:
                         start_location = match.group(1)
                         end_location = match.group(2)
-                        action = "enter " + end_location
-                    message += action + ", "
+                        message += "(" + agent.name + "): enter " + end_location + ", "
+                    else:
+                        message += "(" + agent.name + ") "
+
 
                 else:
                     pattern = r"MOVE from ([\w\s]+) to ([\w\s]+)"
@@ -248,8 +249,8 @@ class ViewMonitor(Action):
                         print("choose_location", choose_location)
                         if start_location == choose_location:
                             message += "(" + agent.name + "): "
-                            action = "leave " + start_location
-                            message += action + ", "
+                            act = "leave " + start_location
+                            message += act + ", "
 
         message += "}}"
         print(message)
