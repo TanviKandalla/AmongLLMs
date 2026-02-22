@@ -43,7 +43,7 @@ DEFAULT_GAME_ARGS = {
             "moonshotai/kimi-k2.5",
             "mistralai/mistral-large-2512",
             "meta-llama/llama-3.3-70b-instruct",
-            "anthropic/claude-sonnet-4.5",
+            "anthropic/claude-opus-4.6",
             "qwen/qwen3-next-80b-a3b-thinking",
         ],
         "CREWMATE_LLM_CHOICES": [
@@ -51,7 +51,7 @@ DEFAULT_GAME_ARGS = {
             "moonshotai/kimi-k2.5",
             "mistralai/mistral-large-2512",
             "meta-llama/llama-3.3-70b-instruct",
-            "anthropic/claude-sonnet-4.5",
+            "anthropic/claude-opus-4.6",
             "qwen/qwen3-next-80b-a3b-thinking",
         ],
         "assignment_mode": "unique",  # 'random' picks with replacement, 'unique' picks without replacement
