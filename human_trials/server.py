@@ -243,6 +243,14 @@ async def get_game_state(game_id: int):
         "status", "running" if game_id in running_games else "waiting"
     )
 
+    is_spectating = True
+    if human_player_result:
+        human_agent, _ = human_player_result
+        # If the human agent is still in the list of agents the game is iterating over
+        if human_agent in game.agents:
+            human_state = human_agent.get_current_state_for_web()
+            is_spectating = not human_agent.player.is_alive
+
     # Initialize state object
     state = {
         "timestep": game.timestep,
@@ -254,6 +262,17 @@ async def get_game_state(game_id: int):
             "max_timesteps", 50
         ),  # Add max_timesteps from game config
     }
+
+    if game.current_phase == "meeting":
+        # Everyone is moved to Cafeteria in meeting_phase(), but you probably want "alive attendees"
+        alive = [p.name for p in game.players if getattr(p, "is_alive", False)]
+        dead  = [p.name for p in game.players if not getattr(p, "is_alive", True)]
+
+        state["meeting_attendees"] = alive
+        state["meeting_dead"] = dead  # optional (ghosts)
+    else:
+        state["meeting_attendees"] = []
+        state["meeting_dead"] = []
 
     # Add results and error message if game is completed/errored
     if game_status in ["completed", "error", "cancelled"]:
@@ -297,16 +316,48 @@ async def get_game_state(game_id: int):
                     human_agent.player.get_available_actions()
                 )
                 human_state = human_agent.get_current_state_for_web()
+                state["is_alive"] = human_state.get("is_alive", "")
 
                 # Update the state with the human player's available actions
                 state["available_actions"] = human_state.get("available_actions", [])
                 state["player_info"] = human_state.get("player_info", "")
                 state["condensed_memory"] = human_state.get("condensed_memory", "")
 
+
     if game_id in human_monitor_futures:
         state["waiting_for_monitor_room"] = True
         state["monitor_rooms"] = human_monitor_rooms.get(game_id, [])
         state["is_human_turn"] = True  # Keep showing it's the human's turn
+    state["is_spectating"] = is_spectating
+
+
+    log = []
+    # if getattr(game, "important_activity_log", None):
+    #     log = game.important_activity_log
+    # elif getattr(game, "activity_log", None):
+    log = game.activity_log
+
+    state["spectator_log_len"] = len(log)
+
+    tail = log[-10:] if log else []
+    state["spectator_feed"] = []
+    start_index = max(0, len(log) - len(tail))
+
+    for i, r in enumerate(tail):
+        action_obj = r.get("action")
+        if hasattr(action_obj, "action_text"):
+            action_text = action_obj.action_text()
+        else:
+            action_text = str(action_obj)
+
+        state["spectator_feed"].append({
+            "id": start_index + i,
+            "timestep": r.get("timestep"),
+            "player": getattr(r.get("player"), "name", r.get("player")),
+            "action": action_text,
+            "phase": r.get("phase"),
+            "round": r.get("round", None),
+        })
 
     return state
 

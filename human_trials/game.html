@@ -465,6 +465,10 @@
 
         <div class="game-screen" id="gameScreen">
             <h1>Game <span id="gameId"></span></h1>
+            <div id="spectatorFeed" class="section" style="display: none; border: 2px solid var(--accent-color); background: rgba(204, 120, 92, 0.1);">
+              <h2 style="color: var(--accent-color);">Spectator Mode</h2>
+              <div id="aiThoughts" style="font-family: 'Courier New', monospace; font-size: 0.9em; white-space: pre-wrap;"></div>
+            </div>
 
             <div class="status-bar">
                  <span>Game Status: <strong id="gameStatus">Loading...</strong></span>
@@ -474,6 +478,10 @@
                  <span>Your Name: <strong id="humanPlayerName">...</strong></span>
                 <span id="teammateSpan" style="display:none;">Teammate: <strong id="teammateInfo" style="color: #F14D43;"></strong></span>
              </div>
+            <div id="meetingBanner" class="section" style="display:none; border: 2px solid var(--secondary-color);">
+              <h3 style="margin-top:0; color: var(--secondary-color);">🗣️ Meeting</h3>
+              <div id="meetingPeople"></div>
+            </div>
 
             <div class="game-layout">
                 <div class="section map-section">
@@ -519,6 +527,7 @@
         let currentGameId = null;
         let gameStateInterval = null;
         let lastGameState = null;  // Store the last valid game state
+        let lastSeenSpectatorId = -1;
         const API_BASE_URL = `http://${window.location.hostname}:${window.location.port}/api`;
 
         const homeScreen = document.getElementById('homeScreen');
@@ -589,6 +598,42 @@
             }
             return true;
         }
+
+        function renderMeetingBanner(state) {
+          const banner = document.getElementById("meetingBanner");
+          const peopleDiv = document.getElementById("meetingPeople");
+          if (!banner || !peopleDiv) return;
+
+          const isMeeting = (state.current_phase || "").toLowerCase() === "meeting";
+
+          if (!isMeeting) {
+            banner.style.display = "none";
+            peopleDiv.innerHTML = "";
+            return;
+          }
+
+          const attendees = Array.isArray(state.meeting_attendees) ? state.meeting_attendees : [];
+          const dead = Array.isArray(state.meeting_dead) ? state.meeting_dead : [];
+
+          const attendeesHtml = attendees.length
+              ? attendees.map(n => `<span style="padding:2px 8px; border:1px solid #333; border-radius:999px; margin:2px; display:inline-block;">${escapeHtml(n)}</span>`).join("")
+              : `<span style="color: var(--text-dark)">No attendee data.</span>`;
+
+          const deadHtml = dead.length
+              ? `<div style="margin-top:10px; color: var(--text-dark); font-size:0.95em;">
+         <strong>Dead:</strong> ${dead.map(escapeHtml).join(", ")}
+       </div>`
+              : "";
+
+          peopleDiv.innerHTML = `
+    <div><strong>Attendees:</strong></div>
+    <div style="margin-top:8px;">${attendeesHtml}</div>
+    ${deadHtml}
+  `;
+
+          banner.style.display = "block";
+      }
+
 
         async function startNewGame() {
             startGameBtn.disabled = true;
@@ -678,6 +723,76 @@
             }
         }
 
+        function updateSpectatorLog(state) {
+          let logSection = document.getElementById('spectator-log');
+
+          // Create the UI element if it doesn't exist
+          if (!logSection) {
+            logSection = document.createElement('div');
+            logSection.id = 'spectator-log';
+            logSection.className = 'section';
+            logSection.innerHTML = `
+      <h3 style="color: var(--accent-color);">📡 Spectator Feed (Live)</h3>
+      <div id="log-content" style="font-family: monospace; max-height: 260px; overflow-y: auto;"></div>
+    `;
+            document.querySelector('.game-layout').prepend(logSection);
+          }
+
+          const logContent = document.getElementById('log-content');
+          if (!logContent) return;
+
+          // ----------------------------
+          // Preferred: backend provides a rolling feed
+          // state.spectator_feed = [{ id, timestep, player, action, phase, round }, ...]
+          // ----------------------------
+          if (Array.isArray(state.spectator_feed) && state.spectator_feed.length > 0) {
+            // append new events only (iterate oldest->newest so the newest ends up on top after prepend)
+            const newEvents = state.spectator_feed
+            .filter(evt => typeof evt.id === "number" && evt.id > lastSeenSpectatorId)
+            .sort((a, b) => a.id - b.id);
+
+            for (const evt of newEvents) {
+              const entry = document.createElement('div');
+              entry.style.padding = "6px 0";
+              entry.style.borderBottom = "1px solid #333";
+
+              const who = evt.player || state.current_player || "Unknown";
+              const action = evt.action || "—";
+              const meta = (evt.phase || evt.timestep !== undefined)
+                  ? ` <span style="color: var(--text-dark);">(${evt.phase ?? "?"}, t=${evt.timestep ?? "?"})</span>`
+                  : "";
+
+              entry.innerHTML = `<span style="color: var(--primary-color)">[${who}]</span> ${action}${meta}`;
+              logContent.prepend(entry);
+
+              lastSeenSpectatorId = evt.id;
+            }
+
+            return; // done
+          }
+
+          // ----------------------------
+          // Fallback: backend only provides last_agent_action + current_player (+ timestep)
+          // ----------------------------
+          const who = state.current_player || "Unknown";
+          const action = state.last_agent_action;
+
+          if (!action) return;
+
+          // Strong de-dupe key: action text alone is NOT enough (MOVE repeats)
+          const key = `${state.timestep ?? "?"}|${who}|${action}`;
+
+          if (key === lastActionKey) return;
+          lastActionKey = key;
+
+          const entry = document.createElement('div');
+          entry.style.padding = "6px 0";
+          entry.style.borderBottom = "1px solid #333";
+          entry.innerHTML = `<span style="color: var(--primary-color)">[${who}]</span> ${action}
+    <span style="color: var(--text-dark);">(t=${state.timestep ?? "?"})</span>`;
+          logContent.prepend(entry);
+        }
+
         async function updateGameState() {
             // Skip polling if game hasn't started yet
             if (!gameStarted || !currentGameId) return;
@@ -709,6 +824,17 @@
                 const gameState = await response.json();
                 console.log("Received game state:", gameState);
 
+                if (gameState.is_spectating) {
+                  // 1. Ensure we don't block the loop waiting for human input
+                  waitingForHumanInput = false;
+
+                  // 2. Hide the action UI
+                  if (humanActionArea) humanActionArea.style.display = 'none';
+
+                  // 3. Update the Spectator Log
+                  updateSpectatorLog(gameState);
+                }
+
                 // Save the last game state
                 lastGameState = gameState;
 
@@ -723,7 +849,7 @@
                     stopGameStatePolling();
                 }
 
-                renderGameState(gameState);
+                renderGameState(gameState, gameState.is_spectating);
                 hideLoading();
 
                  // Stop polling if game is completed or errored
@@ -747,10 +873,24 @@
             }
         }
 
-        function renderGameState(state) {
-            if (!checkRequiredElements()) {
-                return;
+        function renderGameState(state, isSpectating=false) {
+          const spectatorFeed = document.getElementById('spectatorFeed');
+          const aiThoughts = document.getElementById('aiThoughts');
+
+          if (isSpectating) {
+            spectatorFeed.style.display = 'block';
+            humanActionArea.style.display = 'none'; // Never show buttons to a ghost
+
+            // If the current player is an AI and has thinking data in the state
+            if (state.current_player_thinking) {
+              aiThoughts.innerHTML = `<strong>${state.current_player} is thinking:</strong>\n${state.current_player_thinking}`;
             }
+          } else {
+            spectatorFeed.style.display = 'none';
+          }
+          if (!checkRequiredElements()) {
+              return;
+          }
           if (state.waiting_for_monitor_room && state.monitor_rooms) {
             if (!waitingForMonitorRoom) {
               waitingForMonitorRoom = true;
@@ -765,6 +905,7 @@
 
           gameStatusDisplay.textContent = state.status;
             phaseInfoDisplay.textContent = state.current_phase || 'N/A';
+          renderMeetingBanner(state);
 
             // Display current step and player
             const stepInfo = document.getElementById('stepInfo');
